@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "complete-code"
+      - "complete-code/**"
       - "libraries.txt"
       - ".github/workflows/build.yml"
   workflow_dispatch:
@@ -19,6 +19,8 @@ concurrency:
 env:
   # CDCOnBoot=cdc liga o Serial ao USB-C nativo da placa
   FQBN: "esp32:esp32:esp32c6:CDCOnBoot=cdc"
+  # O arduino-cli exige pasta e .ino com o mesmo nome:
+  # o passo "Preparar sketch" copia Hello.ino para build-sketch/Hello
   SKETCH: build-sketch/Hello
   SKETCH_SRC: complete-code
   ESP32_INDEX: "https://espressif.github.io/arduino-esp32/package_esp32_index.json"
@@ -58,11 +60,20 @@ jobs:
             done < libraries.txt
           fi
 
-          - name: Preparar sketch
-       run: |
+      - name: Preparar sketch
+        run: |
           mkdir -p "$SKETCH"
           cp "$SKETCH_SRC"/Hello.ino "$SKETCH"/
           cp "$SKETCH_SRC"/*.h "$SKETCH_SRC"/*.hpp "$SKETCH_SRC"/*.cpp "$SKETCH"/ 2>/dev/null || true
+
+      - name: Compilar
+        run: |
+          arduino-cli compile \
+            --fqbn "$FQBN" \
+            --export-binaries \
+            --warnings default \
+            "$SKETCH"
+
       - name: Preparar ficheiros
         run: |
           mkdir -p out
@@ -73,15 +84,6 @@ jobs:
           cp "$MERGED" out/firmware-merged.bin
           cp "$APP" out/firmware-app.bin
           ls -l out
-      - name: Compilar
-        run: |
-          arduino-cli compile \
-            --fqbn "$FQBN" \
-            --export-binaries \
-            --warnings default \
-            "$SKETCH"
-
-   
 
       - name: Guardar como artefacto
         uses: actions/upload-artifact@v4
