@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "firmware/**"
+      - "complete-code"
       - "libraries.txt"
       - ".github/workflows/build.yml"
   workflow_dispatch:
@@ -19,7 +19,7 @@ concurrency:
 env:
   # CDCOnBoot=cdc liga o Serial ao USB-C nativo da placa
   FQBN: "esp32:esp32:esp32c6:CDCOnBoot=cdc"
-  SKETCH: firmware
+  SKETCH: complete-code/Hello.ino
   ESP32_INDEX: "https://espressif.github.io/arduino-esp32/package_esp32_index.json"
 
 jobs:
