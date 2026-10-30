@@ -1,0 +1,93 @@
+name: Compilar ESP32-C6
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "firmware/**"
+      - "libraries.txt"
+      - ".github/workflows/build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # CDCOnBoot=cdc liga o Serial ao USB-C nativo da placa
+  FQBN: "esp32:esp32:esp32c6:CDCOnBoot=cdc"
+  SKETCH: firmware
+  ESP32_INDEX: "https://espressif.github.io/arduino-esp32/package_esp32_index.json"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Obter código
+        uses: actions/checkout@v4
+
+      - name: Instalar arduino-cli
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Cache do core e bibliotecas
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.arduino15
+            ~/Arduino/libraries
+          key: arduino-${{ hashFiles('.github/workflows/build.yml', 'libraries.txt') }}
+
+      - name: Instalar core ESP32
+        run: |
+          arduino-cli config init --overwrite
+          arduino-cli config add board_manager.additional_urls "$ESP32_INDEX"
+          arduino-cli core update-index
+          # Para fixar uma versão: esp32:esp32@3.3.0
+          arduino-cli core install esp32:esp32
+
+      - name: Instalar bibliotecas (libraries.txt)
+        run: |
+          if [ -f libraries.txt ]; then
+            while IFS= read -r lib; do
+              case "$lib" in ""|\#*) continue ;; esac
+              arduino-cli lib install "$lib"
+            done < libraries.txt
+          fi
+
+      - name: Compilar
+        run: |
+          arduino-cli compile \
+            --fqbn "$FQBN" \
+            --export-binaries \
+            --warnings default \
+            "$SKETCH"
+
+      - name: Preparar ficheiros
+        run: |
+          mkdir -p out
+          MERGED=$(find "$SKETCH/build" -name '*.ino.merged.bin' | head -n1)
+          APP=$(find "$SKETCH/build" -name '*.ino.bin' | head -n1)
+          test -n "$MERGED" || { echo "merged.bin não encontrado"; find "$SKETCH/build"; exit 1; }
+          test -n "$APP" || { echo "app .bin não encontrado"; find "$SKETCH/build"; exit 1; }
+          cp "$MERGED" out/firmware-merged.bin
+          cp "$APP" out/firmware-app.bin
+          ls -l out
+
+      - name: Guardar como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: out/*
+
+      - name: Publicar release "latest"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --cleanup-tag --yes || true
+          gh release create latest out/* \
+            --target "$GITHUB_SHA" \
+            --title "Último firmware" \
+            --notes "Commit ${GITHUB_SHA::7}. Flash por USB: firmware-merged.bin no endereço 0x0. Atualização OTA: firmware-app.bin."
